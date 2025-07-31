@@ -1,0 +1,169 @@
+@import "tailwindcss";
+
+:root {
+  /* VS Code Dark Theme Colors */
+  --vscode-bg: #1e1e1e;
+  --vscode-foreground: #cccccc;
+  --vscode-foreground-muted: #969696;
+  --vscode-sidebar: #252526;
+  --vscode-editor: #1e1e1e;
+  --vscode-terminal: #1e1e1e;
+  --vscode-titlebar: #2d2d30;
+  --vscode-tab-bar: #2d2d30;
+  --vscode-border: #3e3e42;
+  --vscode-hover: #2a2d2e;
+  --vscode-accent: #007acc;
+  --vscode-accent-hover: #005a9e;
+  --vscode-accent-foreground: #ffffff;
+  --vscode-selection: #264f78;
+  --vscode-error: #f14c4c;
+  --vscode-warning: #ffcc02;
+  --vscode-success: #89d185;
+  --vscode-info: #75beff;
+  
+  /* Font Variables */
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@theme inline {
+  /* VS Code Theme Colors */
+  --color-vscode-bg: var(--vscode-bg);
+  --color-vscode-foreground: var(--vscode-foreground);
+  --color-vscode-foreground-muted: var(--vscode-foreground-muted);
+  --color-vscode-sidebar: var(--vscode-sidebar);
+  --color-vscode-editor: var(--vscode-editor);
+  --color-vscode-terminal: var(--vscode-terminal);
+  --color-vscode-titlebar: var(--vscode-titlebar);
+  --color-vscode-tab-bar: var(--vscode-tab-bar);
+  --color-vscode-border: var(--vscode-border);
+  --color-vscode-hover: var(--vscode-hover);
+  --color-vscode-accent: var(--vscode-accent);
+  --color-vscode-accent-hover: var(--vscode-accent-hover);
+  --color-vscode-accent-foreground: var(--vscode-accent-foreground);
+  --color-vscode-selection: var(--vscode-selection);
+  --color-vscode-error: var(--vscode-error);
+  --color-vscode-warning: var(--vscode-warning);
+  --color-vscode-success: var(--vscode-success);
+  --color-vscode-info: var(--vscode-info);
+  
+  /* Font Families */
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* Light theme override (optional) */
+@media (prefers-color-scheme: light) {
+  :root {
+    --vscode-bg: #ffffff;
+    --vscode-foreground: #333333;
+    --vscode-foreground-muted: #6c6c6c;
+    --vscode-sidebar: #f3f3f3;
+    --vscode-editor: #ffffff;
+    --vscode-terminal: #ffffff;
+    --vscode-titlebar: #dddddd;
+    --vscode-tab-bar: #dddddd;
+    --vscode-border: #e5e5e5;
+    --vscode-hover: #e8e8e8;
+    --vscode-selection: #add6ff;
+  }
+}
+
+body {
+  background: var(--vscode-bg);
+  color: var(--vscode-foreground);
+  font-family: var(--font-mono), 'Consolas', 'Monaco', 'Courier New', monospace;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Custom scrollbar styling for VS Code-like appearance */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--vscode-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--vscode-border);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-hover);
+}
+
+::-webkit-scrollbar-corner {
+  background: var(--vscode-bg);
+}
+
+/* Selection styling */
+::selection {
+  background: var(--vscode-selection);
+}
+
+::-moz-selection {
+  background: var(--vscode-selection);
+}
+
+/* Focus outline styling */
+*:focus {
+  outline: 1px solid var(--vscode-accent);
+  outline-offset: -1px;
+}
+
+/* Panel resize handle styling */
+[data-panel-resize-handle-enabled] {
+  cursor: col-resize;
+}
+
+[data-panel-resize-handle-enabled][data-panel-resize-handle-direction="vertical"] {
+  cursor: row-resize;
+}
+
+/* Responsive utilities */
+@media (max-width: 768px) {
+  .mobile-hidden {
+    display: none !important;
+  }
+  
+  .mobile-full {
+    width: 100% !important;
+  }
+  
+  /* Ensure mobile panels are properly sized */
+  [data-panel-group] {
+    height: 100% !important;
+  }
+}
+
+/* Tablet breakpoint */
+@media (max-width: 1024px) {
+  .tablet-hidden {
+    display: none !important;
+  }
+}
+
+/* Animation for smooth transitions */
+.panel-transition {
+  transition: all 0.2s ease-in-out;
+}
+
+/* Focus styles for better accessibility */
+button:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--vscode-accent);
+  outline-offset: 2px;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  :root {
+    --vscode-border: #ffffff;
+    --vscode-hover: #404040;
+  }
+}

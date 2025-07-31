@@ -1,0 +1,44 @@
+# Docker ignore file for ATALANTA
+# Ignore compiled binaries and object files
+*.o
+*.exe
+atalanta
+fsim
+
+# Ignore Visual Studio files
+*.dsp
+*.dsw
+*.opt
+*.plg
+*.positions
+*.sln
+*.vcproj
+*.IAB
+*.IAD
+*.IMB
+*.IMD
+*.PFI
+*.PO
+*.PR
+*.PRI
+*.PS
+*.SearchResults
+*.udb
+*.WK3
+
+# Ignore test outputs
+*.test
+*.vec
+
+# Ignore documentation that's not needed in container
+*.pdf
+*.ppt
+
+# Keep essential files
+!README
+!Compile_ReadMe.txt
+!makefile
+!*.cpp
+!*.h
+!*.bench
+!man/

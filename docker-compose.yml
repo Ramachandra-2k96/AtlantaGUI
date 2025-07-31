@@ -1,0 +1,110 @@
+version: '3.8'
+
+services:
+  # ATALANTA Web GUI service (recommended)
+  atalanta-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    image: atalanta-web-gui:latest
+    container_name: atalanta-web-gui
+    ports:
+      - "3000:3000"
+    volumes:
+      # Named volume for persistent workspace (recommended)
+      - atalanta_workspace:/workspace
+    working_dir: /workspace
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+    # Automatically restart unless stopped
+    restart: unless-stopped
+    command: ["web"]
+    
+  # ATALANTA Web GUI with local directory binding
+  atalanta-web-local:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    image: atalanta-web-gui:latest
+    container_name: atalanta-web-local
+    ports:
+      - "3000:3000"
+    volumes:
+      # Bind mount local directories (optional)
+      - ./local-workspace:/workspace
+    working_dir: /workspace
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+    profiles: ["local"]
+    command: ["web"]
+    
+  # ATALANTA Web GUI in CLI mode
+  atalanta-web-cli:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    image: atalanta-web-gui:latest
+    container_name: atalanta-web-cli
+    stdin_open: true
+    tty: true
+    volumes:
+      - atalanta_workspace:/workspace
+    working_dir: /workspace
+    environment:
+      - TERM=xterm-256color
+    profiles: ["cli"]
+    command: ["cli"]
+
+  # Original ATALANTA CLI service (legacy)
+  atalanta:
+    build: .
+    image: atalanta:latest
+    container_name: atalanta-container
+    stdin_open: true
+    tty: true
+    volumes:
+      # Named volume for persistent workspace (recommended)
+      - atalanta_workspace:/workspace
+    working_dir: /workspace
+    environment:
+      - TERM=xterm-256color
+    # Automatically restart unless stopped
+    restart: unless-stopped
+    profiles: ["legacy"]
+    
+  # Alternative: ATALANTA with local directory binding (legacy)
+  atalanta-local:
+    build: .
+    image: atalanta:latest
+    container_name: atalanta-local
+    stdin_open: true
+    tty: true
+    volumes:
+      # Bind mount local directories (optional)
+      - ./local-workspace:/workspace
+    working_dir: /workspace
+    environment:
+      - TERM=xterm-256color
+    profiles: ["legacy-local"]
+    
+  # Development version with source code mounted (legacy)
+  atalanta-dev:
+    build: .
+    image: atalanta:latest
+    container_name: atalanta-dev
+    stdin_open: true
+    tty: true
+    volumes:
+      - atalanta_workspace:/workspace
+      - .:/opt/atalanta-source:ro  # Read-only source mount
+    working_dir: /workspace
+    environment:
+      - TERM=xterm-256color
+    profiles: ["legacy-dev"]
+
+volumes:
+  # Named volume for persistent data
+  atalanta_workspace:
+    driver: local

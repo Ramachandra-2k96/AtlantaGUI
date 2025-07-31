@@ -1,0 +1,218 @@
+# ATALANTA Web GUI Docker Image
+# Multi-stage build that extends existing Atalanta container with Next.js support
+# This creates a web-based GUI for the ATALANTA test pattern generator
+
+# Stage 1: Build the existing Atalanta binary
+FROM ubuntu:20.04 as atalanta-builder
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Set up the environment
+ENV ATALANTA_HOME=/opt/atalanta
+ENV ATALANTA_MAN=/opt/atalanta
+ENV PATH="${PATH}:/opt/atalanta/bin"
+
+# Install necessary packages for building Atalanta
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    g++ \
+    gcc \
+    make \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create directories
+RUN mkdir -p /opt/atalanta/bin
+
+# Set working directory
+WORKDIR /opt/atalanta
+
+# Copy source code
+COPY . /opt/atalanta/
+
+# Fix makefile for modern g++ compiler if needed
+RUN sed -i 's/CC=cc/CC=g++/' makefile
+
+# Add compatibility flags for older C++ code
+RUN sed -i 's/CFLAGS = -O -g/CFLAGS = -O -g -fpermissive -Wno-write-strings/' makefile
+
+# Clean any existing builds
+RUN make clean 2>/dev/null || true
+
+# Compile ATALANTA with error handling
+RUN make atalanta || (echo "Initial build failed, trying with additional flags..." && \
+    sed -i 's/g++ $(CFLAGS)/g++ $(CFLAGS) -std=c++98/' makefile && \
+    make clean && make atalanta)
+
+# Install the binary
+RUN cp atalanta bin/atalanta
+
+# Stage 2: Create the web-enabled container
+FROM ubuntu:20.04
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Set up environment variables
+ENV ATALANTA_HOME=/opt/atalanta
+ENV ATALANTA_MAN=/opt/atalanta
+ENV PATH="${PATH}:/opt/atalanta/bin"
+ENV WORKSPACE=/workspace
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Install system dependencies including Node.js
+RUN apt-get update && apt-get install -y \
+    # System utilities
+    build-essential \
+    vim \
+    nano \
+    less \
+    man-db \
+    tree \
+    git \
+    htop \
+    curl \
+    wget \
+    file \
+    bc \
+    # Node.js dependencies
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js 18.x (LTS)
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Verify Node.js installation
+RUN node --version && npm --version
+
+# Create directories
+RUN mkdir -p /opt/atalanta/bin /workspace/circuits /workspace/outputs /workspace/work /app
+
+# Copy Atalanta binary and related files from builder stage
+COPY --from=atalanta-builder /opt/atalanta/bin/atalanta /opt/atalanta/bin/atalanta
+COPY --from=atalanta-builder /opt/atalanta/man /opt/atalanta/man
+
+# Create a user for better security
+RUN useradd -m -s /bin/bash atalanta_user && \
+    chown -R atalanta_user:atalanta_user /opt/atalanta && \
+    chown -R atalanta_user:atalanta_user /workspace && \
+    chown -R atalanta_user:atalanta_user /app
+
+# Switch to the atalanta user
+USER atalanta_user
+
+# Set up the web application directory
+WORKDIR /app
+
+# Copy package.json and package-lock.json (will be created in next steps)
+# For now, create a basic package.json
+RUN echo '{\
+  "name": "atalanta-web-gui",\
+  "version": "1.0.0",\
+  "private": true,\
+  "scripts": {\
+    "dev": "next dev",\
+    "build": "next build",\
+    "start": "next start",\
+    "lint": "next lint"\
+  },\
+  "dependencies": {\
+    "next": "14.0.0",\
+    "react": "^18.0.0",\
+    "react-dom": "^18.0.0",\
+    "typescript": "^5.0.0",\
+    "@types/node": "^20.0.0",\
+    "@types/react": "^18.0.0",\
+    "@types/react-dom": "^18.0.0"\
+  }\
+}' > package.json
+
+# Install Node.js dependencies
+RUN npm install
+
+# Create basic Next.js application structure
+RUN mkdir -p pages api components public styles
+
+# Create a basic Next.js page
+RUN echo 'import React from "react";\n\
+\n\
+export default function Home() {\n\
+  return (\n\
+    <div style={{ padding: "2rem", fontFamily: "Arial, sans-serif" }}>\n\
+      <h1>ATALANTA Web GUI</h1>\n\
+      <p>Welcome to the ATALANTA Test Pattern Generator Web Interface</p>\n\
+      <p>Container is running successfully!</p>\n\
+    </div>\n\
+  );\n\
+}' > pages/index.tsx
+
+# Create Next.js configuration
+RUN echo 'const nextConfig = {\n\
+  reactStrictMode: true,\n\
+  swcMinify: true,\n\
+  experimental: {\n\
+    appDir: false\n\
+  }\n\
+};\n\
+\n\
+module.exports = nextConfig;' > next.config.js
+
+# Create TypeScript configuration
+RUN echo '{\n\
+  "compilerOptions": {\n\
+    "target": "es5",\n\
+    "lib": ["dom", "dom.iterable", "es6"],\n\
+    "allowJs": true,\n\
+    "skipLibCheck": true,\n\
+    "strict": true,\n\
+    "forceConsistentCasingInFileNames": true,\n\
+    "noEmit": true,\n\
+    "esModuleInterop": true,\n\
+    "module": "esnext",\n\
+    "moduleResolution": "node",\n\
+    "resolveJsonModule": true,\n\
+    "isolatedModules": true,\n\
+    "jsx": "preserve",\n\
+    "incremental": true,\n\
+    "plugins": [\n\
+      {\n\
+        "name": "next"\n\
+      }\n\
+    ],\n\
+    "baseUrl": ".",\n\
+    "paths": {\n\
+      "@/*": ["./*"]\n\
+    }\n\
+  },\n\
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],\n\
+  "exclude": ["node_modules"]\n\
+}' > tsconfig.json
+
+# Build the Next.js application
+RUN npm run build
+
+# Copy the startup script
+COPY web-entrypoint.sh /opt/atalanta/web-entrypoint.sh
+
+# Make sure the user owns the entrypoint script
+USER root
+RUN chown atalanta_user:atalanta_user /opt/atalanta/web-entrypoint.sh && \
+    chmod +x /opt/atalanta/web-entrypoint.sh
+USER atalanta_user
+
+# Set the working directory to workspace
+WORKDIR /workspace
+
+# Expose the web server port
+EXPOSE 3000
+
+# Set the entrypoint
+ENTRYPOINT ["/opt/atalanta/web-entrypoint.sh"]
+
+# Default command starts the web server
+CMD ["web"]
