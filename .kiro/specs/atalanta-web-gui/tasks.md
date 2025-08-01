@@ -39,13 +39,13 @@
     - Add terminal resize handling and proper cleanup on disconnect
     - _Requirements: 3.1, 3.4, 3.5_
 
-  - [ ] 5.2 Build Terminal component with xterm.js
+  - [x] 5.2 Build Terminal component with xterm.js
     - Integrate xterm.js with WebSocket connection for real-time terminal interaction
     - Implement copy/paste functionality and keyboard shortcuts
     - Add terminal session persistence and restoration capabilities
     - _Requirements: 3.1, 3.2, 3.4, 8.3_
 
-- [ ] 6. Develop Monaco-based code editor with .bench syntax support
+- [-] 6. Develop Monaco-based code editor with .bench syntax support
   - Create custom Monaco Editor language definition for .bench circuit files
   - Implement syntax highlighting rules for INPUT, OUTPUT, and gate definitions
   - Add auto-completion support for common circuit elements and gate types
