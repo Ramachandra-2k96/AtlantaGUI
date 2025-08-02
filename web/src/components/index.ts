@@ -7,3 +7,4 @@ export { default as Terminal } from './Terminal';
 export { default as AtlantaRunner } from './AtlantaRunner';
 export { default as ResultsViewer } from './ResultsViewer';
 export { default as Welcome } from './Welcome';
+export { default as MenuBar } from './MenuBar';

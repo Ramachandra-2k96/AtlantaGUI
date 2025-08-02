@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { useFile } from '@/contexts/FileContext';
-import { X, Save, FileText, Circle, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { X, Save, FileText, Circle } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import {
   benchLanguageConfig,
@@ -25,14 +25,7 @@ interface CodeEditorProps {
     readOnly?: boolean;
 }
 
-// Auto-save status types
-type AutoSaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
 
-interface AutoSaveState {
-  status: AutoSaveStatus;
-  lastSaved?: Date;
-  error?: string;
-}
 
 export default function CodeEditor({
     file: propFile
@@ -53,59 +46,33 @@ export default function CodeEditor({
 
     const editorRef = useRef<any>(null);
     const monacoRef = useRef<any>(null);
-    const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     
-    // Auto-save state management
-    const [autoSaveState, setAutoSaveState] = useState<AutoSaveState>({
-        status: 'idle'
-    });
-    
-    // Auto-save configuration
-    const AUTO_SAVE_DELAY = 2000; // 2 seconds
+    // Validation configuration
     const VALIDATION_DELAY = 500; // 0.5 seconds
 
-    // Enhanced save function with status tracking
+    // Manual save function
     const handleSave = useCallback(async () => {
         if (currentFile && isDirty) {
             try {
-                setAutoSaveState({ status: 'saving' });
                 await saveFile();
-                setAutoSaveState({ 
-                    status: 'saved', 
-                    lastSaved: new Date() 
-                });
-                
-                // Reset to idle after showing saved status
-                setTimeout(() => {
-                    setAutoSaveState(prev => ({ ...prev, status: 'idle' }));
-                }, 2000);
             } catch (error) {
-                setAutoSaveState({ 
-                    status: 'error', 
-                    error: error instanceof Error ? error.message : 'Save failed' 
-                });
+                console.error('Failed to save file:', error);
             }
         }
     }, [saveFile, currentFile, isDirty]);
 
-    // Enhanced content change handler with validation and auto-save
+    // Enhanced content change handler with validation only (no auto-save)
     const handleContentChange = useCallback((value: string | undefined) => {
         if (value !== undefined) {
             updateContent(value);
             
-            // Update auto-save status
-            setAutoSaveState({ status: 'pending' });
-            
-            // Clear existing timeouts
-            if (saveTimeoutRef.current) {
-                clearTimeout(saveTimeoutRef.current);
-            }
+            // Clear existing validation timeout
             if (validationTimeoutRef.current) {
                 clearTimeout(validationTimeoutRef.current);
             }
             
-            // Schedule validation (faster than auto-save)
+            // Schedule validation for .bench files
             validationTimeoutRef.current = setTimeout(() => {
                 if (editorRef.current && monacoRef.current && currentFile?.name.endsWith('.bench')) {
                     const model = editorRef.current.getModel();
@@ -115,15 +82,8 @@ export default function CodeEditor({
                     }
                 }
             }, VALIDATION_DELAY);
-            
-            // Schedule auto-save
-            saveTimeoutRef.current = setTimeout(() => {
-                if (currentFile && isDirty) {
-                    handleSave();
-                }
-            }, AUTO_SAVE_DELAY);
         }
-    }, [updateContent, currentFile, isDirty, handleSave, AUTO_SAVE_DELAY, VALIDATION_DELAY]);
+    }, [updateContent, currentFile, VALIDATION_DELAY]);
 
     const handleCloseTab = useCallback(async (index: number, e: React.MouseEvent) => {
         e.stopPropagation();
@@ -238,6 +198,7 @@ export default function CodeEditor({
 
         // Add keyboard shortcuts
         editor.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyS, () => {
+            // Prevent default browser save behavior
             handleSave();
         });
         
@@ -258,52 +219,61 @@ export default function CodeEditor({
         }
     }, [handleSave, currentFile]);
 
-    // Keyboard shortcuts
+    // Enhanced keyboard shortcuts for browser environment
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
+            // Ctrl+S or Cmd+S to save
             if ((e.ctrlKey || e.metaKey) && e.key === 's') {
                 e.preventDefault();
-                if (currentFile && isDirty) {
-                    handleSave();
-                }
+                e.stopPropagation();
+                handleSave();
+                return false;
             }
 
-            // Ctrl+W to close current tab
+            // Ctrl+W or Cmd+W to close current tab (prevent browser close)
             if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
                 e.preventDefault();
+                e.stopPropagation();
                 if (activeFileIndex >= 0) {
                     closeFile(activeFileIndex);
                 }
+                return false;
             }
 
-            // Ctrl+Tab to switch between tabs
-            if ((e.ctrlKey || e.metaKey) && e.key === 'Tab') {
-                e.preventDefault();
-                const nextIndex = (activeFileIndex + 1) % openFiles.length;
-                switchToFile(nextIndex);
+            // Alt+Left/Right or Ctrl+PageUp/PageDown to switch between tabs
+            if (openFiles.length > 1) {
+                if ((e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) ||
+                    (e.ctrlKey && (e.key === 'PageUp' || e.key === 'PageDown'))) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+                        // Previous tab
+                        const prevIndex = activeFileIndex === 0 ? openFiles.length - 1 : activeFileIndex - 1;
+                        switchToFile(prevIndex);
+                    } else {
+                        // Next tab
+                        const nextIndex = (activeFileIndex + 1) % openFiles.length;
+                        switchToFile(nextIndex);
+                    }
+                    return false;
+                }
             }
         };
 
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [currentFile, isDirty, activeFileIndex, openFiles.length, handleSave, closeFile, switchToFile]);
+        // Use capture phase to intercept before browser handles it
+        document.addEventListener('keydown', handleKeyDown, true);
+        return () => document.removeEventListener('keydown', handleKeyDown, true);
+    }, [activeFileIndex, openFiles.length, handleSave, closeFile, switchToFile]);
 
-    // Cleanup timeouts and reset auto-save state when file changes
+    // Cleanup validation timeout
     useEffect(() => {
         return () => {
-            if (saveTimeoutRef.current) {
-                clearTimeout(saveTimeoutRef.current);
-            }
             if (validationTimeoutRef.current) {
                 clearTimeout(validationTimeoutRef.current);
             }
         };
     }, []);
-    
-    // Reset auto-save state when switching files
-    useEffect(() => {
-        setAutoSaveState({ status: 'idle' });
-    }, [currentFile?.path]);
 
     const displayFile = currentFile || (propFile ? { name: propFile, path: propFile } : null);
     const isBenchFile = displayFile?.name.endsWith('.bench') || false;
@@ -425,48 +395,16 @@ export default function CodeEditor({
                 )}
             </div>
 
-            {/* Enhanced Status Bar with Auto-save Status */}
+            {/* Status Bar */}
             {displayFile && (
                 <div className="h-6 bg-[#007acc] text-white text-xs flex items-center px-3 flex-shrink-0">
                     <span className="mr-4">
                         {currentFile ? `${currentFile.path}` : displayFile.name}
                     </span>
                     
-                    {/* Auto-save status indicator */}
-                    {currentFile && (
-                        <div className="mr-4 flex items-center gap-1">
-                            {autoSaveState.status === 'pending' && (
-                                <>
-                                    <Clock className="w-3 h-3 text-yellow-200" />
-                                    <span className="text-yellow-200">Auto-save pending...</span>
-                                </>
-                            )}
-                            {autoSaveState.status === 'saving' && (
-                                <>
-                                    <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />
-                                    <span>Saving...</span>
-                                </>
-                            )}
-                            {autoSaveState.status === 'saved' && (
-                                <>
-                                    <CheckCircle className="w-3 h-3 text-green-200" />
-                                    <span className="text-green-200">
-                                        Saved {autoSaveState.lastSaved && new Date(autoSaveState.lastSaved).toLocaleTimeString()}
-                                    </span>
-                                </>
-                            )}
-                            {autoSaveState.status === 'error' && (
-                                <>
-                                    <AlertCircle className="w-3 h-3 text-red-200" />
-                                    <span className="text-red-200" title={autoSaveState.error}>
-                                        Save failed
-                                    </span>
-                                </>
-                            )}
-                            {autoSaveState.status === 'idle' && isDirty && (
-                                <span className="text-yellow-200">• Unsaved changes</span>
-                            )}
-                        </div>
+                    {/* Unsaved changes indicator */}
+                    {currentFile && isDirty && (
+                        <span className="mr-4 text-yellow-200">• Unsaved changes</span>
                     )}
                     
                     {currentFile && (
@@ -487,11 +425,11 @@ export default function CodeEditor({
                                         ? 'bg-[#0e639c] hover:bg-[#1177bb] text-white' 
                                         : 'bg-[#4a4a4a] text-gray-300 cursor-not-allowed'
                                 }`}
-                                disabled={isLoading || !isDirty || autoSaveState.status === 'saving'}
+                                disabled={isLoading || !isDirty}
                                 title={isDirty ? "Save file (Ctrl+S)" : "No changes to save"}
                             >
                                 <Save className="w-3 h-3" />
-                                {autoSaveState.status === 'saving' ? 'Saving...' : 'Save'}
+                                Save
                             </button>
                         )}
                     </div>

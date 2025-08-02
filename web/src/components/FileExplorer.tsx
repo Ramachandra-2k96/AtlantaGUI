@@ -49,6 +49,7 @@ interface ContextMenuState {
   x: number;
   y: number;
   item: FileInfo | DirectoryInfo | null;
+  showNewSubmenu?: boolean;
 }
 
 // File type icons mapping using Lucide icons
@@ -123,7 +124,8 @@ export default function FileExplorer({
     visible: false,
     x: 0,
     y: 0,
-    item: null
+    item: null,
+    showNewSubmenu: false
   });
   const [dragOver, setDragOver] = useState(false);
   const [renameItem, setRenameItem] = useState<string | null>(null);
@@ -131,6 +133,7 @@ export default function FileExplorer({
   const [showNewFileInput, setShowNewFileInput] = useState(false);
   const [showNewFolderInput, setShowNewFolderInput] = useState(false);
   const [loadedPaths, setLoadedPaths] = useState<Set<string>>(new Set());
+  const [currentDirectory, setCurrentDirectory] = useState<string>(rootDirectory);
   
   const fileExplorerRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -226,15 +229,17 @@ export default function FileExplorer({
     try {
       const response = await listFiles(path);
       
+      // Calculate the correct level for this path
+      const pathDepth = path === rootDirectory ? 0 : path.split('/').length - rootDirectory.split('/').length;
+      
       const nodes: TreeNode[] = [];
-      const level = path === rootDirectory ? 0 : 1; // Simple level calculation
       
       // Add directories first
       response.directories.forEach(dir => {
         nodes.push({
           item: dir,
           expanded: expandedNodes.has(dir.path),
-          level,
+          level: pathDepth,
           loading: false
         });
       });
@@ -244,7 +249,7 @@ export default function FileExplorer({
         nodes.push({
           item: file,
           expanded: false,
-          level,
+          level: pathDepth,
           loading: false
         });
       });
@@ -254,6 +259,9 @@ export default function FileExplorer({
         newTreeData.set(path, nodes);
         return newTreeData;
       });
+      
+      // Mark this path as loaded
+      setLoadedPaths(prev => new Set([...prev, path]));
       
     } catch (error) {
       console.error('Failed to refresh directory:', error);
@@ -289,6 +297,9 @@ export default function FileExplorer({
     setSelectedItem(node.item.path);
     
     if (node.item.type === 'directory') {
+      // Set current directory for new file/folder creation
+      setCurrentDirectory(node.item.path);
+      
       const isExpanded = expandedNodes.has(node.item.path);
       const newExpanded = new Set(expandedNodes);
       
@@ -334,7 +345,7 @@ export default function FileExplorer({
       await openFile(node.item as FileInfo);
       onFileSelect?.(node.item as FileInfo);
     }
-  }, [expandedNodes, treeData, rootDirectory, loadDirectoryContents, loadedPaths, onDirectoryChange, onFileSelect]);
+  }, [expandedNodes, treeData, rootDirectory, loadDirectoryContents, loadedPaths, onDirectoryChange, onFileSelect, openFile]);
 
   const handleContextMenu = useCallback((event: React.MouseEvent, item: FileInfo | DirectoryInfo) => {
     event.preventDefault();
@@ -342,7 +353,8 @@ export default function FileExplorer({
       visible: true,
       x: event.clientX,
       y: event.clientY,
-      item
+      item,
+      showNewSubmenu: false
     });
   }, []);
 
@@ -350,45 +362,107 @@ export default function FileExplorer({
     if (!newItemName.trim()) return;
     
     try {
-      const filePath = rootDirectory ? `${rootDirectory}/${newItemName}` : newItemName;
+      // Use current directory (selected folder) or root directory
+      const targetDirectory = currentDirectory || rootDirectory;
+      const filePath = targetDirectory ? `${targetDirectory}/${newItemName}` : newItemName;
+      
       await createFile(filePath, '');
       setShowNewFileInput(false);
       setNewItemName('');
       onFileCreate?.(filePath);
       
-      // Refresh root directory
-      refreshDirectory(rootDirectory);
+      // Refresh the target directory immediately for real-time update
+      await refreshDirectory(targetDirectory);
+      
+      // If the target directory is expanded, make sure it stays expanded
+      if (targetDirectory !== rootDirectory) {
+        setExpandedNodes(prev => new Set([...prev, targetDirectory]));
+      }
+      
     } catch (error) {
       console.error('Failed to create file:', error);
+      setLocalError('Failed to create file');
     }
-  }, [newItemName, rootDirectory, createFile, onFileCreate, refreshDirectory]);
+  }, [newItemName, currentDirectory, rootDirectory, createFile, onFileCreate, refreshDirectory]);
 
   const handleNewFolder = useCallback(async () => {
     if (!newItemName.trim()) return;
     
     try {
-      const folderPath = rootDirectory ? `${rootDirectory}/${newItemName}` : newItemName;
+      // Use current directory (selected folder) or root directory
+      const targetDirectory = currentDirectory || rootDirectory;
+      const folderPath = targetDirectory ? `${targetDirectory}/${newItemName}` : newItemName;
+      
       await createDirectory(folderPath);
       setShowNewFolderInput(false);
       setNewItemName('');
       
-      // Refresh root directory
-      refreshDirectory(rootDirectory);
+      // Refresh the target directory immediately for real-time update
+      await refreshDirectory(targetDirectory);
+      
+      // If the target directory is expanded, make sure it stays expanded
+      if (targetDirectory !== rootDirectory) {
+        setExpandedNodes(prev => new Set([...prev, targetDirectory]));
+      }
+      
     } catch (error) {
       console.error('Failed to create folder:', error);
+      setLocalError('Failed to create folder');
     }
-  }, [newItemName, rootDirectory, createDirectory, refreshDirectory]);
+  }, [newItemName, currentDirectory, rootDirectory, createDirectory, refreshDirectory]);
 
   const handleDelete = useCallback(async (item: FileInfo | DirectoryInfo) => {
     if (window.confirm(`Are you sure you want to delete ${item.name}?`)) {
       try {
         await deleteFile(item.path);
-        setContextMenu({ visible: false, x: 0, y: 0, item: null });
+        setContextMenu({ visible: false, x: 0, y: 0, item: null, showNewSubmenu: false });
         
-        // Refresh root directory
-        refreshDirectory(rootDirectory);
+        // Find the parent directory of the deleted item
+        const parentPath = item.path.substring(0, item.path.lastIndexOf('/')) || rootDirectory;
+        
+        // Refresh the parent directory immediately for real-time update
+        await refreshDirectory(parentPath);
+        
+        // Remove the deleted item from all state if it was a directory
+        if (item.type === 'directory') {
+          // Remove from loadedPaths (this directory and all subdirectories)
+          setLoadedPaths(prev => {
+            const newPaths = new Set(prev);
+            // Remove the deleted directory and any subdirectories
+            Array.from(prev).forEach(path => {
+              if (path === item.path || path.startsWith(item.path + '/')) {
+                newPaths.delete(path);
+              }
+            });
+            return newPaths;
+          });
+          
+          // Remove from expanded nodes (this directory and all subdirectories)
+          setExpandedNodes(prev => {
+            const newExpanded = new Set(prev);
+            Array.from(prev).forEach(path => {
+              if (path === item.path || path.startsWith(item.path + '/')) {
+                newExpanded.delete(path);
+              }
+            });
+            return newExpanded;
+          });
+          
+          // Remove from tree data (this directory and all subdirectories)
+          setTreeData(prev => {
+            const newTreeData = new Map(prev);
+            Array.from(prev.keys()).forEach(path => {
+              if (path === item.path || path.startsWith(item.path + '/')) {
+                newTreeData.delete(path);
+              }
+            });
+            return newTreeData;
+          });
+        }
+        
       } catch (error) {
         console.error('Failed to delete item:', error);
+        setLocalError('Failed to delete item');
       }
     }
   }, [deleteFile, rootDirectory, refreshDirectory]);
@@ -409,7 +483,7 @@ export default function FileExplorer({
     try {
       // For now, we'll implement rename as copy + delete since the API doesn't have rename
       // This is a simplified approach - in a real implementation you'd want a proper rename API
-      const parentPath = oldPath.substring(0, oldPath.lastIndexOf('/'));
+      const parentPath = oldPath.substring(0, oldPath.lastIndexOf('/')) || rootDirectory;
       const newPath = parentPath ? `${parentPath}/${newName}` : newName;
       
       // Read the old file content
@@ -431,8 +505,9 @@ export default function FileExplorer({
       setRenameItem(null);
       setNewItemName('');
       
-      // Refresh the directory
-      refreshDirectory(rootDirectory);
+      // Refresh the parent directory immediately for real-time update
+      await refreshDirectory(parentPath);
+      
     } catch (error) {
       console.error('Failed to rename item:', error);
       setLocalError('Failed to rename item');
@@ -518,7 +593,10 @@ export default function FileExplorer({
         
         {/* Current path breadcrumb */}
         <div className="text-xs text-[#858585] truncate">
-          {rootDirectory || 'workspace'}
+          {currentDirectory || rootDirectory || 'workspace'}
+          {currentDirectory && currentDirectory !== rootDirectory && (
+            <span className="text-[#4FC1FF]"> (selected)</span>
+          )}
         </div>
       </div>
 
@@ -548,6 +626,9 @@ export default function FileExplorer({
       {/* New file input */}
       {showNewFileInput && (
         <div className="p-2 border-b border-[#2d2d30]">
+          <div className="text-xs text-[#858585] mb-1">
+            Creating in: {currentDirectory || rootDirectory || 'workspace'}
+          </div>
           <input
             type="text"
             value={newItemName}
@@ -569,6 +650,9 @@ export default function FileExplorer({
       {/* New folder input */}
       {showNewFolderInput && (
         <div className="p-2 border-b border-[#2d2d30]">
+          <div className="text-xs text-[#858585] mb-1">
+            Creating in: {currentDirectory || rootDirectory || 'workspace'}
+          </div>
           <input
             type="text"
             value={newItemName}
@@ -661,6 +745,54 @@ export default function FileExplorer({
           className="fixed bg-[#3c3c3c] border border-[#464647] shadow-lg py-1 z-50 text-xs"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
+          {contextMenu.item.type === 'directory' && (
+            <>
+              <div className="relative">
+                <button
+                  onMouseEnter={() => setContextMenu(prev => ({ ...prev, showNewSubmenu: true }))}
+                  className="flex items-center justify-between w-full px-3 py-1 text-left hover:bg-[#2a2d2e] text-[#cccccc]"
+                >
+                  <div className="flex items-center">
+                    <Plus className="w-3 h-3 mr-2" />
+                    New
+                  </div>
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+                
+                {/* Submenu */}
+                {contextMenu.showNewSubmenu && (
+                  <div
+                    className="absolute left-full top-0 bg-[#3c3c3c] border border-[#464647] shadow-lg py-1 min-w-[120px]"
+                    onMouseLeave={() => setContextMenu(prev => ({ ...prev, showNewSubmenu: false }))}
+                  >
+                    <button
+                      onClick={() => {
+                        setCurrentDirectory(contextMenu.item!.path);
+                        setShowNewFileInput(true);
+                        setContextMenu({ visible: false, x: 0, y: 0, item: null, showNewSubmenu: false });
+                      }}
+                      className="flex items-center w-full px-3 py-1 text-left hover:bg-[#2a2d2e] text-[#cccccc]"
+                    >
+                      <FileText className="w-3 h-3 mr-2" />
+                      File
+                    </button>
+                    <button
+                      onClick={() => {
+                        setCurrentDirectory(contextMenu.item!.path);
+                        setShowNewFolderInput(true);
+                        setContextMenu({ visible: false, x: 0, y: 0, item: null, showNewSubmenu: false });
+                      }}
+                      className="flex items-center w-full px-3 py-1 text-left hover:bg-[#2a2d2e] text-[#cccccc]"
+                    >
+                      <Folder className="w-3 h-3 mr-2" />
+                      Folder
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="border-t border-[#464647] my-1"></div>
+            </>
+          )}
           <button
             onClick={() => handleRename(contextMenu.item!)}
             className="flex items-center w-full px-3 py-1 text-left hover:bg-[#2a2d2e] text-[#cccccc]"
@@ -679,7 +811,7 @@ export default function FileExplorer({
             <button
               onClick={() => {
                 navigator.clipboard.writeText(contextMenu.item!.path);
-                setContextMenu({ visible: false, x: 0, y: 0, item: null });
+                setContextMenu({ visible: false, x: 0, y: 0, item: null, showNewSubmenu: false });
               }}
               className="flex items-center w-full px-3 py-1 text-left hover:bg-[#2a2d2e] text-[#cccccc]"
             >

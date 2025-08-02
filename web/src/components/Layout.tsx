@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle, ImperativePanelHandle } from 'react-resizable-panels';
 import { Menu, X, ChevronLeft, Files, Search, GitBranch, Settings, FolderOpen } from 'lucide-react';
-import { FileExplorer, Terminal } from '@/components';
+import { FileExplorer, Terminal, MenuBar } from '@/components';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 
 type SidebarTab = 'explorer' | 'search' | 'git' | 'settings';
@@ -124,27 +124,56 @@ export default function Layout({
     setIsTerminalCollapsed(!isTerminalCollapsed);
   };
 
-  // Keyboard shortcuts
+  // Enhanced keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ctrl/Cmd + B to toggle explorer
       if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
         e.preventDefault();
+        e.stopPropagation();
         toggleSidebar('explorer');
+        return false;
       }
+      
       // Ctrl/Cmd + ` to toggle terminal
       if ((e.ctrlKey || e.metaKey) && e.key === '`') {
         e.preventDefault();
+        e.stopPropagation();
         toggleTerminal();
+        return false;
+      }
+      
+      // Ctrl/Cmd + Shift + E to focus explorer
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'E') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (isSidebarCollapsed || activeTab !== 'explorer') {
+          toggleSidebar('explorer');
+        }
+        return false;
+      }
+      
+      // Ctrl/Cmd + Shift + F to focus search
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'F') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (isSidebarCollapsed || activeTab !== 'search') {
+          toggleSidebar('search');
+        }
+        return false;
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleSidebar, toggleTerminal]);
+    // Use capture phase to intercept before browser handles it
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => document.removeEventListener('keydown', handleKeyDown, true);
+  }, [isSidebarCollapsed, activeTab, toggleSidebar, toggleTerminal]);
 
   return (
-    <div className="h-screen w-full bg-vscode-bg text-vscode-foreground font-mono overflow-hidden">
+    <div className="h-screen w-full bg-vscode-bg text-vscode-foreground font-mono overflow-hidden flex flex-col">
+      {/* Menu Bar - Always visible at top */}
+      <MenuBar />
+      
       {/* Mobile Header */}
       {isMobile && (
         <div className="h-12 bg-gray-800 border-b border-gray-700 flex items-center px-4">
@@ -199,7 +228,7 @@ export default function Layout({
       )}
 
       {/* Desktop Layout */}
-      <div className={`flex-1 ${isMobile ? 'h-[calc(100vh-3rem)]' : 'h-full'} flex`}>
+      <div className={`flex-1 ${isMobile ? 'h-[calc(100vh-6rem)]' : 'h-[calc(100vh-1.75rem)]'} flex`}>
         {/* Activity Bar - Always visible, fixed width */}
         {!isMobile && (
           <div className="w-12 bg-vscode-sidebar border-r border-vscode-border flex flex-col items-center py-2 flex-shrink-0">
