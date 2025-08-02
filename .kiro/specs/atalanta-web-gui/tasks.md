@@ -45,7 +45,7 @@
     - Add terminal session persistence and restoration capabilities
     - _Requirements: 3.1, 3.2, 3.4, 8.3_
 
-- [-] 6. Develop Monaco-based code editor with .bench syntax support
+- [x] 6. Develop Monaco-based code editor with .bench syntax support
   - Create custom Monaco Editor language definition for .bench circuit files
   - Implement syntax highlighting rules for INPUT, OUTPUT, and gate definitions
   - Add auto-completion support for common circuit elements and gate types

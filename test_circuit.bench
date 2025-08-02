@@ -1,0 +1,34 @@
+# Test circuit for Monaco Editor .bench syntax highlighting
+# This file demonstrates various .bench language features
+
+INPUT(a)
+INPUT(b)
+INPUT(c)
+INPUT(clk)
+
+OUTPUT(out1)
+OUTPUT(out2)
+OUTPUT(result)
+
+# Basic gates
+and_gate = AND(a, b)
+or_gate = OR(a, b)
+not_gate = NOT(a)
+nand_gate = NAND(a, b)
+nor_gate = NOR(a, b)
+xor_gate = XOR(a, b)
+xnor_gate = XNOR(a, b)
+buffer_gate = BUFF(a)
+
+# Complex logic
+intermediate1 = AND(and_gate, or_gate)
+intermediate2 = OR(not_gate, xor_gate)
+result = XOR(intermediate1, intermediate2)
+
+# Multi-input gates
+multi_and = AND(a, b, c)
+multi_or = OR(a, b, c, clk)
+
+# Output assignments
+out1 = BUFF(result)
+out2 = NOT(result)

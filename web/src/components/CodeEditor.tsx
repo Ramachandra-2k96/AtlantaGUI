@@ -1,14 +1,37 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useFile } from '@/contexts/FileContext';
-import { X, Save, FileText, Circle } from 'lucide-react';
+import { X, Save, FileText, Circle, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import dynamic from 'next/dynamic';
+import {
+  benchLanguageConfig,
+  benchLanguageRegistration,
+  benchLanguageTokens,
+  benchTheme,
+  getBenchCompletionItems,
+  validateBenchSyntax,
+  getBenchHoverProvider,
+} from '@/lib/bench-language';
+
+// Dynamically import Monaco Editor to avoid SSR issues
+const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
 
 interface CodeEditorProps {
     file?: string;
     content?: string;
     onChange?: (content: string) => void;
     readOnly?: boolean;
+}
+
+// Auto-save status types
+type AutoSaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
+
+interface AutoSaveState {
+  status: AutoSaveStatus;
+  lastSaved?: Date;
+  error?: string;
 }
 
 export default function CodeEditor({
@@ -28,20 +51,212 @@ export default function CodeEditor({
         saveFile
     } = useFile();
 
+    const editorRef = useRef<any>(null);
+    const monacoRef = useRef<any>(null);
+    const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    
+    // Auto-save state management
+    const [autoSaveState, setAutoSaveState] = useState<AutoSaveState>({
+        status: 'idle'
+    });
+    
+    // Auto-save configuration
+    const AUTO_SAVE_DELAY = 2000; // 2 seconds
+    const VALIDATION_DELAY = 500; // 0.5 seconds
+
+    // Enhanced save function with status tracking
     const handleSave = useCallback(async () => {
         if (currentFile && isDirty) {
-            await saveFile();
+            try {
+                setAutoSaveState({ status: 'saving' });
+                await saveFile();
+                setAutoSaveState({ 
+                    status: 'saved', 
+                    lastSaved: new Date() 
+                });
+                
+                // Reset to idle after showing saved status
+                setTimeout(() => {
+                    setAutoSaveState(prev => ({ ...prev, status: 'idle' }));
+                }, 2000);
+            } catch (error) {
+                setAutoSaveState({ 
+                    status: 'error', 
+                    error: error instanceof Error ? error.message : 'Save failed' 
+                });
+            }
         }
     }, [saveFile, currentFile, isDirty]);
 
-    const handleContentChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        updateContent(e.target.value);
-    }, [updateContent]);
+    // Enhanced content change handler with validation and auto-save
+    const handleContentChange = useCallback((value: string | undefined) => {
+        if (value !== undefined) {
+            updateContent(value);
+            
+            // Update auto-save status
+            setAutoSaveState({ status: 'pending' });
+            
+            // Clear existing timeouts
+            if (saveTimeoutRef.current) {
+                clearTimeout(saveTimeoutRef.current);
+            }
+            if (validationTimeoutRef.current) {
+                clearTimeout(validationTimeoutRef.current);
+            }
+            
+            // Schedule validation (faster than auto-save)
+            validationTimeoutRef.current = setTimeout(() => {
+                if (editorRef.current && monacoRef.current && currentFile?.name.endsWith('.bench')) {
+                    const model = editorRef.current.getModel();
+                    if (model) {
+                        const markers = validateBenchSyntax(model, monacoRef.current);
+                        monacoRef.current.editor.setModelMarkers(model, 'bench', markers);
+                    }
+                }
+            }, VALIDATION_DELAY);
+            
+            // Schedule auto-save
+            saveTimeoutRef.current = setTimeout(() => {
+                if (currentFile && isDirty) {
+                    handleSave();
+                }
+            }, AUTO_SAVE_DELAY);
+        }
+    }, [updateContent, currentFile, isDirty, handleSave, AUTO_SAVE_DELAY, VALIDATION_DELAY]);
 
     const handleCloseTab = useCallback(async (index: number, e: React.MouseEvent) => {
         e.stopPropagation();
         await closeFile(index);
     }, [closeFile]);
+
+    // Enhanced Monaco Editor initialization with comprehensive .bench language support
+    const handleEditorDidMount = useCallback((editor: any, monacoInstance: any) => {
+        editorRef.current = editor;
+        monacoRef.current = monacoInstance;
+
+        // Register .bench language with enhanced features
+        if (!monacoInstance.languages.getLanguages().some((lang: any) => lang.id === 'bench')) {
+            // Register language
+            monacoInstance.languages.register(benchLanguageRegistration);
+            
+            // Set language configuration
+            monacoInstance.languages.setLanguageConfiguration('bench', benchLanguageConfig);
+            
+            // Set tokenizer
+            monacoInstance.languages.setMonarchTokensProvider('bench', benchLanguageTokens);
+            
+            // Define theme
+            monacoInstance.editor.defineTheme('bench-theme', benchTheme);
+            
+            // Register completion provider with enhanced suggestions
+            monacoInstance.languages.registerCompletionItemProvider('bench', {
+                provideCompletionItems: (model: any, position: any) => {
+                    const word = model.getWordUntilPosition(position);
+                    const range = {
+                        startLineNumber: position.lineNumber,
+                        endLineNumber: position.lineNumber,
+                        startColumn: word.startColumn,
+                        endColumn: word.endColumn,
+                    };
+                    
+                    const suggestions = getBenchCompletionItems(monacoInstance).map((item: any) => ({
+                        ...item,
+                        range,
+                    }));
+                    
+                    return { suggestions };
+                },
+                triggerCharacters: ['(', ',', ' ']
+            });
+            
+            // Register hover provider
+            monacoInstance.languages.registerHoverProvider('bench', getBenchHoverProvider());
+            
+            // Register document formatting provider
+            monacoInstance.languages.registerDocumentFormattingEditProvider('bench', {
+                provideDocumentFormattingEdits: (model: any) => {
+                    const content = model.getValue();
+                    const lines = content.split('\n');
+                    const formattedLines = lines.map((line: string) => {
+                        // Basic formatting: normalize whitespace around operators and parentheses
+                        return line
+                            .replace(/\s*=\s*/g, ' = ')
+                            .replace(/\s*\(\s*/g, '(')
+                            .replace(/\s*\)\s*/g, ')')
+                            .replace(/\s*,\s*/g, ', ')
+                            .trim();
+                    });
+                    
+                    const formattedContent = formattedLines.join('\n');
+                    
+                    return [{
+                        range: model.getFullModelRange(),
+                        text: formattedContent,
+                    }];
+                }
+            });
+        }
+
+        // Set theme
+        monacoInstance.editor.setTheme('bench-theme');
+
+        // Configure enhanced editor options
+        editor.updateOptions({
+            fontSize: 14,
+            fontFamily: 'Consolas, "Courier New", monospace',
+            lineNumbers: 'on',
+            minimap: { enabled: false },
+            scrollBeyondLastLine: false,
+            automaticLayout: true,
+            tabSize: 2,
+            insertSpaces: true,
+            wordWrap: 'on',
+            bracketPairColorization: { enabled: true },
+            autoIndent: 'full',
+            formatOnPaste: true,
+            formatOnType: true,
+            suggest: {
+                showKeywords: true,
+                showSnippets: true,
+                showFunctions: true,
+                showVariables: true,
+            },
+            quickSuggestions: {
+                other: true,
+                comments: false,
+                strings: false,
+            },
+            suggestOnTriggerCharacters: true,
+            acceptSuggestionOnEnter: 'on',
+            acceptSuggestionOnCommitCharacter: true,
+            snippetSuggestions: 'top',
+            wordBasedSuggestions: 'off',
+            parameterHints: { enabled: true },
+            hover: { enabled: true },
+        });
+
+        // Add keyboard shortcuts
+        editor.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyS, () => {
+            handleSave();
+        });
+        
+        // Add format document shortcut
+        editor.addCommand(monacoInstance.KeyMod.Shift | monacoInstance.KeyMod.Alt | monacoInstance.KeyCode.KeyF, () => {
+            editor.getAction('editor.action.formatDocument').run();
+        });
+        
+        // Initial validation for .bench files
+        if (currentFile?.name.endsWith('.bench')) {
+            setTimeout(() => {
+                const model = editor.getModel();
+                if (model) {
+                    const markers = validateBenchSyntax(model, monacoInstance);
+                    monacoInstance.editor.setModelMarkers(model, 'bench', markers);
+                }
+            }, 100);
+        }
+    }, [handleSave, currentFile]);
 
     // Keyboard shortcuts
     useEffect(() => {
@@ -73,7 +288,25 @@ export default function CodeEditor({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [currentFile, isDirty, activeFileIndex, openFiles.length, handleSave, closeFile, switchToFile]);
 
+    // Cleanup timeouts and reset auto-save state when file changes
+    useEffect(() => {
+        return () => {
+            if (saveTimeoutRef.current) {
+                clearTimeout(saveTimeoutRef.current);
+            }
+            if (validationTimeoutRef.current) {
+                clearTimeout(validationTimeoutRef.current);
+            }
+        };
+    }, []);
+    
+    // Reset auto-save state when switching files
+    useEffect(() => {
+        setAutoSaveState({ status: 'idle' });
+    }, [currentFile?.path]);
+
     const displayFile = currentFile || (propFile ? { name: propFile, path: propFile } : null);
+    const isBenchFile = displayFile?.name.endsWith('.bench') || false;
 
     return (
         <div className="h-full bg-[#1e1e1e] text-[#cccccc] flex flex-col relative">
@@ -136,119 +369,134 @@ export default function CodeEditor({
                 )}
 
                 {displayFile && !isLoading && (
-                    <EditorWithLineNumbers
-                        content={fileContent}
-                        onChange={handleContentChange}
-                    />
+                    <div className="flex-1 min-h-0">
+                        <MonacoEditor
+                            height="100%"
+                            language={isBenchFile ? 'bench' : 'plaintext'}
+                            theme={isBenchFile ? 'bench-theme' : 'vs-dark'}
+                            value={fileContent}
+                            onChange={handleContentChange}
+                            onMount={handleEditorDidMount}
+                            options={{
+                                fontSize: 14,
+                                fontFamily: 'Consolas, "Courier New", monospace',
+                                lineNumbers: 'on',
+                                minimap: { enabled: false },
+                                scrollBeyondLastLine: false,
+                                automaticLayout: true,
+                                tabSize: 2,
+                                insertSpaces: true,
+                                wordWrap: 'on',
+                                bracketPairColorization: { enabled: true },
+                                autoIndent: 'full',
+                                formatOnPaste: true,
+                                formatOnType: true,
+                                suggest: {
+                                    showKeywords: true,
+                                    showSnippets: true,
+                                    showFunctions: true,
+                                    showVariables: true,
+                                },
+                                quickSuggestions: {
+                                    other: true,
+                                    comments: false,
+                                    strings: false,
+                                },
+                                suggestOnTriggerCharacters: true,
+                                acceptSuggestionOnEnter: 'on',
+                                acceptSuggestionOnCommitCharacter: true,
+                                snippetSuggestions: 'top',
+                                wordBasedSuggestions: 'off',
+                                parameterHints: { enabled: true },
+                                hover: { enabled: true },
+                                folding: true,
+                                foldingStrategy: 'indentation',
+                                showFoldingControls: 'mouseover',
+                                matchBrackets: 'always',
+                                renderWhitespace: 'selection',
+                                renderControlCharacters: false,
+                                cursorBlinking: 'blink',
+                                cursorSmoothCaretAnimation: 'on',
+                                smoothScrolling: true,
+                                mouseWheelZoom: true,
+                            }}
+                        />
+                    </div>
                 )}
             </div>
 
-            {/* Fixed Status Bar */}
+            {/* Enhanced Status Bar with Auto-save Status */}
             {displayFile && (
                 <div className="h-6 bg-[#007acc] text-white text-xs flex items-center px-3 flex-shrink-0">
                     <span className="mr-4">
                         {currentFile ? `${currentFile.path}` : displayFile.name}
                     </span>
-                    {isDirty && (
-                        <span className="mr-4 text-yellow-200">
-                            • Unsaved changes
-                        </span>
+                    
+                    {/* Auto-save status indicator */}
+                    {currentFile && (
+                        <div className="mr-4 flex items-center gap-1">
+                            {autoSaveState.status === 'pending' && (
+                                <>
+                                    <Clock className="w-3 h-3 text-yellow-200" />
+                                    <span className="text-yellow-200">Auto-save pending...</span>
+                                </>
+                            )}
+                            {autoSaveState.status === 'saving' && (
+                                <>
+                                    <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />
+                                    <span>Saving...</span>
+                                </>
+                            )}
+                            {autoSaveState.status === 'saved' && (
+                                <>
+                                    <CheckCircle className="w-3 h-3 text-green-200" />
+                                    <span className="text-green-200">
+                                        Saved {autoSaveState.lastSaved && new Date(autoSaveState.lastSaved).toLocaleTimeString()}
+                                    </span>
+                                </>
+                            )}
+                            {autoSaveState.status === 'error' && (
+                                <>
+                                    <AlertCircle className="w-3 h-3 text-red-200" />
+                                    <span className="text-red-200" title={autoSaveState.error}>
+                                        Save failed
+                                    </span>
+                                </>
+                            )}
+                            {autoSaveState.status === 'idle' && isDirty && (
+                                <span className="text-yellow-200">• Unsaved changes</span>
+                            )}
+                        </div>
                     )}
+                    
                     {currentFile && (
                         <span className="mr-4">
                             {fileContent.split('\n').length} lines
                         </span>
                     )}
+                    
                     <div className="ml-auto flex items-center gap-4">
                         <span>
-                            {currentFile?.extension || 'Plain Text'}
+                            {isBenchFile ? 'Bench Circuit' : (currentFile?.extension || 'Plain Text')}
                         </span>
-                        {currentFile && isDirty && (
+                        {currentFile && (
                             <button
                                 onClick={handleSave}
-                                className="px-2 py-0.5 bg-[#0e639c] hover:bg-[#1177bb] text-white rounded text-xs"
-                                disabled={isLoading}
-                                title="Save file (Ctrl+S)"
+                                className={`px-2 py-0.5 rounded text-xs flex items-center gap-1 ${
+                                    isDirty 
+                                        ? 'bg-[#0e639c] hover:bg-[#1177bb] text-white' 
+                                        : 'bg-[#4a4a4a] text-gray-300 cursor-not-allowed'
+                                }`}
+                                disabled={isLoading || !isDirty || autoSaveState.status === 'saving'}
+                                title={isDirty ? "Save file (Ctrl+S)" : "No changes to save"}
                             >
                                 <Save className="w-3 h-3" />
+                                {autoSaveState.status === 'saving' ? 'Saving...' : 'Save'}
                             </button>
                         )}
                     </div>
                 </div>
             )}
-        </div>
-    );
-}
-
-// Separate component for editor with line numbers to handle scrolling properly
-function EditorWithLineNumbers({ content, onChange }: { content: string, onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void }) {
-    const [scrollTop, setScrollTop] = useState(0);
-    const lineCount = content.split('\n').length;
-
-    return (
-        <div className="flex-1 flex min-h-0">
-            {/* Line numbers */}
-            <div className="w-12 bg-[#1e1e1e] border-r border-[#2d2d30] text-[#858585] text-xs font-mono flex-shrink-0 overflow-hidden relative">
-                <div
-                    className="absolute top-0 left-0 w-full px-2 py-3"
-                    style={{
-                        transform: `translateY(-${scrollTop}px)`,
-                        lineHeight: '1.25rem'
-                    }}
-                >
-                    {Array.from({ length: Math.max(lineCount, 100) }, (_, index) => (
-                        <div key={index} className="text-right h-5">
-                            {index + 1}
-                        </div>
-                    ))}
-                </div>
-            </div>
-
-            {/* Editor */}
-            <div className="flex-1 relative min-w-0">
-                <textarea
-                    value={content}
-                    onChange={onChange}
-                    className="w-full h-full p-3 bg-[#1e1e1e] text-[#cccccc] font-mono text-sm resize-none focus:outline-none"
-                    placeholder="Start typing..."
-                    spellCheck={false}
-                    style={{
-                        lineHeight: '1.25rem',
-                        tabSize: 2,
-                        scrollbarWidth: 'thin',
-                        scrollbarColor: '#424242 #1e1e1e'
-                    }}
-                    onScroll={(e) => {
-                        setScrollTop(e.currentTarget.scrollTop);
-                    }}
-                />
-
-                {/* Custom scrollbar styling */}
-                <style jsx>{`
-          textarea::-webkit-scrollbar {
-            width: 12px;
-            height: 12px;
-          }
-          
-          textarea::-webkit-scrollbar-track {
-            background: #1e1e1e;
-          }
-          
-          textarea::-webkit-scrollbar-thumb {
-            background: #424242;
-            border-radius: 6px;
-            border: 2px solid #1e1e1e;
-          }
-          
-          textarea::-webkit-scrollbar-thumb:hover {
-            background: #4f4f4f;
-          }
-          
-          textarea::-webkit-scrollbar-corner {
-            background: #1e1e1e;
-          }
-        `}</style>
-            </div>
         </div>
     );
 }
