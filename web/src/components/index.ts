@@ -8,3 +8,4 @@ export { default as AtlantaRunner } from './AtlantaRunner';
 export { default as ResultsViewer } from './ResultsViewer';
 export { default as Welcome } from './Welcome';
 export { default as MenuBar } from './MenuBar';
+export { default as FolderBrowser } from './FolderBrowser';

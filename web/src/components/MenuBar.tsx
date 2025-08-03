@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { FolderOpen, File, Save, RotateCcw } from 'lucide-react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useFile } from '@/contexts/FileContext';
+import { FolderBrowser } from '@/components';
 
 interface MenuBarProps {
   onOpenFolder?: () => void;
@@ -18,8 +19,7 @@ export default function MenuBar({ onOpenFolder }: MenuBarProps) {
   const { currentWorkspace, setWorkspace } = useWorkspace();
   const { saveFile, saveAllFiles, currentFile, isDirty, openFiles } = useFile();
   const [menuState, setMenuState] = useState<MenuState>({ activeMenu: null, position: { x: 0, y: 0 } });
-  const [showFolderInput, setShowFolderInput] = useState(false);
-  const [folderPath, setFolderPath] = useState('');
+  const [showFolderBrowser, setShowFolderBrowser] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Keyboard shortcuts for menu actions
@@ -31,7 +31,7 @@ export default function MenuBar({ onOpenFolder }: MenuBarProps) {
           if ((e2.ctrlKey || e2.metaKey) && e2.key === 'o') {
             e2.preventDefault();
             e2.stopPropagation();
-            setShowFolderInput(true);
+            setShowFolderBrowser(true);
             document.removeEventListener('keydown', handleSecondKey, true);
             return false;
           }
@@ -105,21 +105,67 @@ export default function MenuBar({ onOpenFolder }: MenuBarProps) {
   };
 
   const handleOpenFolder = () => {
-    setShowFolderInput(true);
+    setShowFolderBrowser(true);
     closeMenu();
   };
 
-  const handleFolderSubmit = () => {
-    if (folderPath.trim()) {
-      setWorkspace(folderPath.trim());
-      setShowFolderInput(false);
-      setFolderPath('');
+  const handleFolderSelect = async (folderPath: string) => {
+    try {
+      // Auto-save all dirty files before changing workspace
+      const dirtyFiles = openFiles.filter(f => f.isDirty);
+      if (dirtyFiles.length > 0) {
+        console.log(`Auto-saving ${dirtyFiles.length} files before workspace change...`);
+        await saveAllFiles();
+      }
+      
+      // Change workspace
+      setWorkspace(folderPath);
+      
+      // Force a page refresh to ensure everything reloads properly
+      setTimeout(() => {
+        window.location.reload();
+      }, 100);
+      
+    } catch (error) {
+      console.error('Failed to save files before workspace change:', error);
+      // Still change workspace even if save fails, but warn user
+      if (window.confirm('Failed to save some files. Continue changing workspace anyway?')) {
+        setWorkspace(folderPath);
+        setTimeout(() => {
+          window.location.reload();
+        }, 100);
+      }
     }
   };
 
-  const handleResetWorkspace = () => {
+  const handleResetWorkspace = async () => {
     if (window.confirm('Are you sure you want to close the current workspace?')) {
-      setWorkspace('');
+      try {
+        // Auto-save all dirty files before closing workspace
+        const dirtyFiles = openFiles.filter(f => f.isDirty);
+        if (dirtyFiles.length > 0) {
+          console.log(`Auto-saving ${dirtyFiles.length} files before closing workspace...`);
+          await saveAllFiles();
+        }
+        
+        // Close workspace
+        setWorkspace('');
+        
+        // Force a page refresh to ensure everything reloads properly
+        setTimeout(() => {
+          window.location.reload();
+        }, 100);
+        
+      } catch (error) {
+        console.error('Failed to save files before closing workspace:', error);
+        // Still close workspace even if save fails, but warn user
+        if (window.confirm('Failed to save some files. Continue closing workspace anyway?')) {
+          setWorkspace('');
+          setTimeout(() => {
+            window.location.reload();
+          }, 100);
+        }
+      }
     }
     closeMenu();
   };
@@ -315,55 +361,13 @@ export default function MenuBar({ onOpenFolder }: MenuBarProps) {
         </div>
       )}
 
-      {/* Folder Input Modal */}
-      {showFolderInput && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-[#3c3c3c] border border-[#464647] rounded-lg p-6 w-96 max-w-[90vw]">
-            <h3 className="text-lg font-medium text-[#cccccc] mb-4">Open Folder</h3>
-            <div className="mb-4">
-              <label className="block text-sm text-[#cccccc] mb-2">
-                Folder Path:
-              </label>
-              <input
-                type="text"
-                value={folderPath}
-                onChange={(e) => setFolderPath(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleFolderSubmit();
-                  if (e.key === 'Escape') {
-                    setShowFolderInput(false);
-                    setFolderPath('');
-                  }
-                }}
-                placeholder="Enter folder path (e.g., /path/to/folder or data)"
-                className="w-full px-3 py-2 bg-[#2d2d30] border border-[#464647] text-[#cccccc] placeholder-[#858585] focus:outline-none focus:border-[#0e639c] rounded"
-                autoFocus
-              />
-              <div className="text-xs text-[#858585] mt-1">
-                Current: {currentWorkspace || 'No workspace selected'}
-              </div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => {
-                  setShowFolderInput(false);
-                  setFolderPath('');
-                }}
-                className="px-4 py-2 text-[#cccccc] hover:bg-[#2a2d2e] rounded transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleFolderSubmit}
-                className="px-4 py-2 bg-[#0e639c] hover:bg-[#1177bb] text-white rounded transition-colors"
-                disabled={!folderPath.trim()}
-              >
-                Open
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Folder Browser Modal */}
+      <FolderBrowser
+        isOpen={showFolderBrowser}
+        onClose={() => setShowFolderBrowser(false)}
+        onSelectFolder={handleFolderSelect}
+        currentPath={currentWorkspace || undefined}
+      />
     </>
   );
 }

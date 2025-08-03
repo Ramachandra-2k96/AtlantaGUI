@@ -591,13 +591,7 @@ export default function FileExplorer({
           </div>
         </div>
         
-        {/* Current path breadcrumb */}
-        <div className="text-xs text-[#858585] truncate">
-          {currentDirectory || rootDirectory || 'workspace'}
-          {currentDirectory && currentDirectory !== rootDirectory && (
-            <span className="text-[#4FC1FF]"> (selected)</span>
-          )}
-        </div>
+
       </div>
 
       {/* Error display */}
@@ -626,9 +620,6 @@ export default function FileExplorer({
       {/* New file input */}
       {showNewFileInput && (
         <div className="p-2 border-b border-[#2d2d30]">
-          <div className="text-xs text-[#858585] mb-1">
-            Creating in: {currentDirectory || rootDirectory || 'workspace'}
-          </div>
           <input
             type="text"
             value={newItemName}
@@ -650,9 +641,6 @@ export default function FileExplorer({
       {/* New folder input */}
       {showNewFolderInput && (
         <div className="p-2 border-b border-[#2d2d30]">
-          <div className="text-xs text-[#858585] mb-1">
-            Creating in: {currentDirectory || rootDirectory || 'workspace'}
-          </div>
           <input
             type="text"
             value={newItemName}
