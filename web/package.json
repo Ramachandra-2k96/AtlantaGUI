@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
+    "@types/uuid": "^10.0.0",
     "@types/ws": "^8.18.1",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.15.0",
@@ -24,6 +25,7 @@
     "react-dom": "19.1.0",
     "react-resizable-panels": "^3.0.4",
     "tailwind-merge": "^3.3.1",
+    "uuid": "^11.1.0",
     "ws": "^8.18.3"
   },
   "devDependencies": {

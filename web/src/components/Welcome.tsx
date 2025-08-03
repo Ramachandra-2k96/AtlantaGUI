@@ -82,8 +82,8 @@ export default function Welcome() {
 
   if (showBrowser) {
     return (
-      <div className="h-full bg-[#1e1e1e] text-[#cccccc] flex flex-col">
-        <div className="border-b border-[#2d2d30] p-4">
+      <div className="h-screen bg-[#1e1e1e] text-[#cccccc] flex flex-col">
+        <div className="border-b border-[#2d2d30] p-4 flex-shrink-0">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-normal text-[#cccccc]">Select Workspace Folder</h2>
             <button
@@ -115,7 +115,7 @@ export default function Welcome() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-y-auto" style={{ height: 'calc(100vh - 200px)' }}>
           {loading && (
             <div className="p-4 text-center text-[#858585] text-xs">
               Loading...
@@ -128,33 +128,31 @@ export default function Welcome() {
             </div>
           )}
           
-          {!loading && !error && (
-            <div>
-              {directories.map((item) => (
-                <div
-                  key={item.path}
-                  onClick={() => handleDirectoryClick(item)}
-                  className={`flex items-center px-4 py-2 text-xs transition-colors cursor-pointer ${
-                    item.isAccessible 
-                      ? 'hover:bg-[#2a2d2e] text-[#cccccc]' 
-                      : 'text-[#858585] cursor-not-allowed'
-                  }`}
-                >
-                  <div className="mr-3">
-                    {getDirectoryIcon(item)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="truncate">
-                      {item.name}
-                    </div>
-                  </div>
-                  {item.isAccessible && item.name !== '..' && (
-                    <ChevronRight className="w-3 h-3 text-[#858585]" />
-                  )}
+          {!loading && !error && directories.map((item) => (
+            <div
+              key={item.path}
+              onClick={() => handleDirectoryClick(item)}
+              className={`flex items-center px-4 py-2 text-xs transition-colors cursor-pointer ${
+                item.isAccessible 
+                  ? 'hover:bg-[#2a2d2e] text-[#cccccc]' 
+                  : 'text-[#858585] cursor-not-allowed'
+              }`}
+            >
+              <div className="mr-3 flex-shrink-0">
+                {getDirectoryIcon(item)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="truncate">
+                  {item.name}
                 </div>
-              ))}
+              </div>
+              {item.isAccessible && item.name !== '..' && (
+                <div className="flex-shrink-0 ml-2">
+                  <ChevronRight className="w-3 h-3 text-[#858585]" />
+                </div>
+              )}
             </div>
-          )}
+          ))}
         </div>
       </div>
     );

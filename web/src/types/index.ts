@@ -17,14 +17,47 @@ export interface DirectoryInfo {
 
 // Atalanta Types
 export interface AtlantaParameters {
-  backtrackLimit1?: number;
-  backtrackLimit2?: number;
-  compactionMode?: 'none' | 'reverse' | 'shuffle';
-  randomSeed?: number;
-  fillMode?: '0' | '1' | 'x' | 'r';
-  logMode?: boolean;
-  faultMode?: 'default' | 'file';
-  faultFile?: string;
+  // Test generation modes
+  diagnosticMode?: 'none' | 'all' | 'limited';
+  diagnosticLimit?: number; // for -D n option
+  
+  // Backtracking limits
+  backtrackLimit?: number; // -b n (phase 1)
+  backtrackLimit2?: number; // -B n (phase 2)
+  
+  // Fault handling
+  faultFile?: string; // -f fn
+  
+  // Simulation mode
+  useHope?: boolean; // -H (3-value logic vs 2-value)
+  
+  // Logging
+  logFile?: string; // -l fn
+  staticLearning?: boolean; // -L
+  
+  // Test compaction
+  compactionLimit?: number; // -c n
+  noCompaction?: boolean; // -N
+  
+  // Random pattern testing
+  randomPatternLimit?: number; // -r n
+  
+  // Random seed
+  randomSeed?: number; // -s n
+  
+  // Output file
+  testFile?: string; // -t fn
+  
+  // Fault output options
+  outputAbortedFaults?: boolean; // -u
+  abortedFaultsFile?: string; // -U fn
+  includeRedundantFaults?: boolean; // -v
+  
+  // Single pattern mode
+  singlePatternMode?: boolean; // -Z
+  
+  // Unspecified input handling
+  unspecifiedInputs?: '0' | '1' | 'X' | 'R'; // -0, -1, -X, -R
 }
 
 export interface AtlantaResult {

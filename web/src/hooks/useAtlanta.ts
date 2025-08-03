@@ -1,65 +1,129 @@
-'use client';
+import { useState, useCallback, useRef } from 'react';
+import { ExecuteRequest, ExecuteResponse, StatusResponse, AtlantaParameters } from '@/types';
 
-import { useState, useCallback } from 'react';
-import { AtlantaParameters, ExecuteResponse } from '@/types';
+interface UseAtlantaReturn {
+  executeAtalanta: (inputFile: string, outputDirectory: string, parameters?: AtlantaParameters) => Promise<string>;
+  getJobStatus: (jobId: string) => Promise<StatusResponse>;
+  cancelJob: (jobId: string) => Promise<void>;
+  isExecuting: boolean;
+  currentJobId: string | null;
+  error: string | null;
+}
 
-export default function useAtlanta() {
-  const [jobs] = useState<Map<string, ExecuteResponse>>(new Map());
-  const [loading, setLoading] = useState(false);
+export function useAtlanta(): UseAtlantaReturn {
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  const executeAtlanta = useCallback(async (
-    inputFile: string, 
-    parameters: AtlantaParameters, 
-    outputDirectory: string = '/workspace'
-  ) => {
-    setLoading(true);
-    setError(null);
+  const executeAtalanta = useCallback(async (
+    inputFile: string,
+    outputDirectory: string,
+    parameters: AtlantaParameters = {}
+  ): Promise<string> => {
     try {
-      console.log('Executing Atalanta with:', { inputFile, parameters, outputDirectory });
-      // Placeholder for API call
-      // const response = await fetch('/api/atalanta/execute', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ inputFile, parameters, outputDirectory })
-      // });
-      // const result: ExecuteResponse = await response.json();
-      // setJobs(prev => new Map(prev.set(result.jobId, result)));
-      // return result;
+      setIsExecuting(true);
+      setError(null);
+      
+      // Cancel any existing request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      
+      abortControllerRef.current = new AbortController();
+      
+      const request: ExecuteRequest = {
+        inputFile,
+        outputDirectory,
+        parameters
+      };
+      
+      const response = await fetch('/api/atalanta', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+        signal: abortControllerRef.current.signal
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to execute Atalanta');
+      }
+      
+      const result: ExecuteResponse = await response.json();
+      setCurrentJobId(result.jobId);
+      
+      return result.jobId;
+      
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to execute Atalanta');
+      if (err instanceof Error && err.name === 'AbortError') {
+        // Request was cancelled, don't set error
+        return '';
+      }
+      
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+      setError(errorMessage);
+      throw new Error(errorMessage);
     } finally {
-      setLoading(false);
+      setIsExecuting(false);
     }
   }, []);
 
-  const getJobStatus = useCallback(async (jobId: string) => {
+  const getJobStatus = useCallback(async (jobId: string): Promise<StatusResponse> => {
     try {
-      console.log('Getting status for job:', jobId);
-      // Placeholder for API call
-      // const response = await fetch(`/api/atalanta/status/${jobId}`);
-      // const status: StatusResponse = await response.json();
-      // return status;
+      setError(null);
+      
+      const response = await fetch(`/api/atalanta?jobId=${encodeURIComponent(jobId)}`);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to get job status');
+      }
+      
+      const status: StatusResponse = await response.json();
+      return status;
+      
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to get job status');
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+      setError(errorMessage);
+      throw new Error(errorMessage);
     }
   }, []);
 
-  const cancelJob = useCallback(async (jobId: string) => {
+  const cancelJob = useCallback(async (jobId: string): Promise<void> => {
     try {
-      console.log('Cancelling job:', jobId);
-      // Placeholder for job cancellation
+      setError(null);
+      
+      const response = await fetch(`/api/atalanta?jobId=${encodeURIComponent(jobId)}`, {
+        method: 'DELETE'
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to cancel job');
+      }
+      
+      // Clear current job if it was cancelled
+      if (currentJobId === jobId) {
+        setCurrentJobId(null);
+        setIsExecuting(false);
+      }
+      
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to cancel job');
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+      setError(errorMessage);
+      throw new Error(errorMessage);
     }
-  }, []);
+  }, [currentJobId]);
 
   return {
-    jobs: Array.from(jobs.values()),
-    loading,
-    error,
-    executeAtlanta,
+    executeAtalanta,
     getJobStatus,
-    cancelJob
+    cancelJob,
+    isExecuting,
+    currentJobId,
+    error
   };
 }
