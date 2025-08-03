@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useFile } from '@/contexts/FileContext';
-import { X, Save, FileText, Circle } from 'lucide-react';
+import { X, Save, FileText, Circle, BarChart3, ChevronRight } from 'lucide-react';
 import dynamic from 'next/dynamic';
+import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import {
   benchLanguageConfig,
   benchLanguageRegistration,
@@ -17,6 +18,9 @@ import {
 
 // Dynamically import Monaco Editor to avoid SSR issues
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
+
+// Dynamically import ResultsViewer to avoid SSR issues
+const ResultsViewer = dynamic(() => import('./ResultsViewer'), { ssr: false });
 
 interface CodeEditorProps {
     file?: string;
@@ -48,8 +52,33 @@ export default function CodeEditor({
     const monacoRef = useRef<any>(null);
     const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     
+    // Results viewer state
+    const [showResultsViewer, setShowResultsViewer] = useState(false);
+    
     // Validation configuration
     const VALIDATION_DELAY = 500; // 0.5 seconds
+
+    // Check if current file is a results file
+    const isResultsFile = currentFile && (
+        currentFile.name.endsWith('.test') || 
+        currentFile.name.endsWith('.vec') || 
+        currentFile.name.endsWith('.log')
+    );
+
+    const getFileType = (): 'test' | 'vec' | 'log' | undefined => {
+        if (!currentFile) return undefined;
+        if (currentFile.name.endsWith('.test')) return 'test';
+        if (currentFile.name.endsWith('.vec')) return 'vec';
+        if (currentFile.name.endsWith('.log')) return 'log';
+        return undefined;
+    };
+
+    // Auto-show results viewer for results files
+    useEffect(() => {
+        if (isResultsFile && !showResultsViewer) {
+            setShowResultsViewer(true);
+        }
+    }, [isResultsFile, showResultsViewer]);
 
     // Manual save function
     const handleSave = useCallback(async () => {
@@ -283,7 +312,7 @@ export default function CodeEditor({
             {/* Fixed Tab Bar - Always show if there are open files */}
             {openFiles.length > 0 && (
                 <div className="h-8 bg-[#2d2d30] border-b border-[#2d2d30] flex items-center overflow-x-auto flex-shrink-0 z-10">
-                    <div className="flex items-center min-w-max">
+                    <div className="flex items-center min-w-max flex-1">
                         {openFiles.map((openFile, index) => (
                             <div
                                 key={`${openFile.file.path}-${index}`}
@@ -309,6 +338,21 @@ export default function CodeEditor({
                             </div>
                         ))}
                     </div>
+                    
+                    {/* Results Viewer Toggle */}
+                    {isResultsFile && (
+                        <div className="flex items-center px-2 border-l border-[#2d2d30]">
+                            <button
+                                onClick={() => setShowResultsViewer(!showResultsViewer)}
+                                className={`p-1 rounded hover:bg-[#3c3c3c] transition-colors ${
+                                    showResultsViewer ? 'bg-[#0e639c] text-white' : 'text-[#858585]'
+                                }`}
+                                title={showResultsViewer ? 'Hide Results Viewer' : 'Show Results Viewer'}
+                            >
+                                <BarChart3 className="w-4 h-4" />
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -340,57 +384,150 @@ export default function CodeEditor({
 
                 {displayFile && !isLoading && (
                     <div className="flex-1 min-h-0">
-                        <MonacoEditor
-                            height="100%"
-                            language={isBenchFile ? 'bench' : 'plaintext'}
-                            theme={isBenchFile ? 'bench-theme' : 'vs-dark'}
-                            value={fileContent}
-                            onChange={handleContentChange}
-                            onMount={handleEditorDidMount}
-                            options={{
-                                fontSize: 14,
-                                fontFamily: 'Consolas, "Courier New", monospace',
-                                lineNumbers: 'on',
-                                minimap: { enabled: false },
-                                scrollBeyondLastLine: false,
-                                automaticLayout: true,
-                                tabSize: 2,
-                                insertSpaces: true,
-                                wordWrap: 'on',
-                                bracketPairColorization: { enabled: true },
-                                autoIndent: 'full',
-                                formatOnPaste: true,
-                                formatOnType: true,
-                                suggest: {
-                                    showKeywords: true,
-                                    showSnippets: true,
-                                    showFunctions: true,
-                                    showVariables: true,
-                                },
-                                quickSuggestions: {
-                                    other: true,
-                                    comments: false,
-                                    strings: false,
-                                },
-                                suggestOnTriggerCharacters: true,
-                                acceptSuggestionOnEnter: 'on',
-                                acceptSuggestionOnCommitCharacter: true,
-                                snippetSuggestions: 'top',
-                                wordBasedSuggestions: 'off',
-                                parameterHints: { enabled: true },
-                                hover: { enabled: true },
-                                folding: true,
-                                foldingStrategy: 'indentation',
-                                showFoldingControls: 'mouseover',
-                                matchBrackets: 'always',
-                                renderWhitespace: 'selection',
-                                renderControlCharacters: false,
-                                cursorBlinking: 'blink',
-                                cursorSmoothCaretAnimation: 'on',
-                                smoothScrolling: true,
-                                mouseWheelZoom: true,
-                            }}
-                        />
+                        {isResultsFile && showResultsViewer ? (
+                            <PanelGroup direction="horizontal" className="h-full">
+                                {/* Editor Panel */}
+                                <Panel 
+                                    defaultSize={70} 
+                                    minSize={30}
+                                >
+                                    <MonacoEditor
+                                        height="100%"
+                                        language={isBenchFile ? 'bench' : 'plaintext'}
+                                        theme={isBenchFile ? 'bench-theme' : 'vs-dark'}
+                                        value={fileContent}
+                                        onChange={handleContentChange}
+                                        onMount={handleEditorDidMount}
+                                        options={{
+                                            fontSize: 14,
+                                            fontFamily: 'Consolas, "Courier New", monospace',
+                                            lineNumbers: 'on',
+                                            minimap: { enabled: false },
+                                            scrollBeyondLastLine: false,
+                                            automaticLayout: true,
+                                            tabSize: 2,
+                                            insertSpaces: true,
+                                            wordWrap: 'on',
+                                            bracketPairColorization: { enabled: true },
+                                            autoIndent: 'full',
+                                            formatOnPaste: true,
+                                            formatOnType: true,
+                                            suggest: {
+                                                showKeywords: true,
+                                                showSnippets: true,
+                                                showFunctions: true,
+                                                showVariables: true,
+                                            },
+                                            quickSuggestions: {
+                                                other: true,
+                                                comments: false,
+                                                strings: false,
+                                            },
+                                            suggestOnTriggerCharacters: true,
+                                            acceptSuggestionOnEnter: 'on',
+                                            acceptSuggestionOnCommitCharacter: true,
+                                            snippetSuggestions: 'top',
+                                            wordBasedSuggestions: 'off',
+                                            parameterHints: { enabled: true },
+                                            hover: { enabled: true },
+                                            folding: true,
+                                            foldingStrategy: 'indentation',
+                                            showFoldingControls: 'mouseover',
+                                            matchBrackets: 'always',
+                                            renderWhitespace: 'selection',
+                                            renderControlCharacters: false,
+                                            cursorBlinking: 'blink',
+                                            cursorSmoothCaretAnimation: 'on',
+                                            smoothScrolling: true,
+                                            mouseWheelZoom: true,
+                                        }}
+                                    />
+                                </Panel>
+
+                                {/* Resize Handle */}
+                                <PanelResizeHandle className="w-1 bg-[#2d2d30] hover:bg-[#007acc] transition-colors cursor-col-resize" />
+
+                                {/* Results Viewer Panel */}
+                                <Panel defaultSize={30} minSize={20} maxSize={70}>
+                                    <div className="h-full flex flex-col">
+                                        {/* Results Viewer Header */}
+                                        <div className="h-8 bg-[#2d2d30] border-b border-[#2d2d30] flex items-center justify-between px-3 flex-shrink-0">
+                                            <span className="text-xs font-medium uppercase tracking-wide text-[#858585]">
+                                                Results Viewer
+                                            </span>
+                                            <button
+                                                onClick={() => setShowResultsViewer(false)}
+                                                className="p-1 hover:bg-[#3c3c3c] rounded transition-colors"
+                                                title="Hide Results Viewer"
+                                            >
+                                                <ChevronRight className="w-3 h-3 text-[#858585]" />
+                                            </button>
+                                        </div>
+                                        
+                                        {/* Results Viewer Content */}
+                                        <div className="flex-1 overflow-hidden">
+                                            <ResultsViewer
+                                                fileType={getFileType()}
+                                                content={fileContent}
+                                                fileName={currentFile?.name}
+                                            />
+                                        </div>
+                                    </div>
+                                </Panel>
+                            </PanelGroup>
+                        ) : (
+                            <MonacoEditor
+                                height="100%"
+                                language={isBenchFile ? 'bench' : 'plaintext'}
+                                theme={isBenchFile ? 'bench-theme' : 'vs-dark'}
+                                value={fileContent}
+                                onChange={handleContentChange}
+                                onMount={handleEditorDidMount}
+                                options={{
+                                    fontSize: 14,
+                                    fontFamily: 'Consolas, "Courier New", monospace',
+                                    lineNumbers: 'on',
+                                    minimap: { enabled: false },
+                                    scrollBeyondLastLine: false,
+                                    automaticLayout: true,
+                                    tabSize: 2,
+                                    insertSpaces: true,
+                                    wordWrap: 'on',
+                                    bracketPairColorization: { enabled: true },
+                                    autoIndent: 'full',
+                                    formatOnPaste: true,
+                                    formatOnType: true,
+                                    suggest: {
+                                        showKeywords: true,
+                                        showSnippets: true,
+                                        showFunctions: true,
+                                        showVariables: true,
+                                    },
+                                    quickSuggestions: {
+                                        other: true,
+                                        comments: false,
+                                        strings: false,
+                                    },
+                                    suggestOnTriggerCharacters: true,
+                                    acceptSuggestionOnEnter: 'on',
+                                    acceptSuggestionOnCommitCharacter: true,
+                                    snippetSuggestions: 'top',
+                                    wordBasedSuggestions: 'off',
+                                    parameterHints: { enabled: true },
+                                    hover: { enabled: true },
+                                    folding: true,
+                                    foldingStrategy: 'indentation',
+                                    showFoldingControls: 'mouseover',
+                                    matchBrackets: 'always',
+                                    renderWhitespace: 'selection',
+                                    renderControlCharacters: false,
+                                    cursorBlinking: 'blink',
+                                    cursorSmoothCaretAnimation: 'on',
+                                    smoothScrolling: true,
+                                    mouseWheelZoom: true,
+                                }}
+                            />
+                        )}
                     </div>
                 )}
             </div>

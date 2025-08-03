@@ -124,3 +124,36 @@ export interface CreateProjectRequest {
   path: string;
   template?: string;
 }
+
+// Results Viewer Types
+export interface ParsedTestFile {
+  circuitName: string;
+  primaryInputs: string[];
+  primaryOutputs: string[];
+  testPatterns: Array<{
+    inputs: string;
+    outputs: string;
+  }>;
+}
+
+export interface ParsedLogFile {
+  circuitName: string;
+  summary: {
+    circuitStructure: Record<string, string | number>;
+    atpgParameters: Record<string, string | number>;
+    testResults: Record<string, string | number>;
+    memoryUsed: string;
+    cpuTime: Record<string, string>;
+  };
+  faultDetectionLog: Array<{
+    patternNumber: number;
+    pattern: string;
+    faultsDetected: number;
+  }>;
+}
+
+export interface ParsedVecFile {
+  patterns: string[];
+  inputWidth: number;
+  patternCount: number;
+}

@@ -1,0 +1,215 @@
+version: '3.8'
+
+# ATALANTA Web GUI Production Docker Compose Configuration
+# Provides production-ready deployment with security, monitoring, and persistence
+
+services:
+  # Main ATALANTA Web GUI service
+  atalanta-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+      args:
+        - NODE_ENV=production
+    image: atalanta-web-gui:production
+    container_name: atalanta-web-production
+    restart: unless-stopped
+    
+    # Port mapping
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    
+    # Environment variables
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+      - PORT=3000
+      - WORKSPACE=/workspace
+      - ATALANTA_HOME=/opt/atalanta
+    
+    # Volume mounts for persistence
+    volumes:
+      - atalanta_workspace:/workspace
+      - atalanta_logs:/var/log/atalanta
+    
+    # Resource limits for production
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    
+    # Health check configuration
+    healthcheck:
+      test: ["/opt/atalanta/healthcheck.sh", "web"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    
+    # Read-only root filesystem for security
+    read_only: true
+    
+    # Temporary filesystems for writable areas
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+      - /var/tmp:noexec,nosuid,size=50m
+    
+    # User specification
+    user: "1001:1001"
+    
+    # Working directory
+    working_dir: /workspace
+    
+    # Labels for monitoring and management
+    labels:
+      - "com.atalanta.service=web-gui"
+      - "com.atalanta.version=2.0"
+      - "com.atalanta.environment=production"
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Network configuration
+    networks:
+      - atalanta-network
+
+  # Optional: Reverse proxy with SSL termination
+  nginx:
+    image: nginx:alpine
+    container_name: atalanta-nginx
+    restart: unless-stopped
+    
+    ports:
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTP_PORT:-80}:80"
+    
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    
+    depends_on:
+      atalanta-web:
+        condition: service_healthy
+    
+    networks:
+      - atalanta-network
+    
+    profiles:
+      - "with-proxy"
+    
+    labels:
+      - "com.atalanta.service=reverse-proxy"
+      - "com.atalanta.environment=production"
+
+  # Optional: Monitoring with Prometheus metrics
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: atalanta-prometheus
+    restart: unless-stopped
+    
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    
+    networks:
+      - atalanta-network
+    
+    profiles:
+      - "with-monitoring"
+    
+    labels:
+      - "com.atalanta.service=monitoring"
+      - "com.atalanta.environment=production"
+
+  # Optional: Log aggregation
+  fluentd:
+    image: fluent/fluentd:v1.16-debian-1
+    container_name: atalanta-fluentd
+    restart: unless-stopped
+    
+    volumes:
+      - ./logging/fluent.conf:/fluentd/etc/fluent.conf:ro
+      - atalanta_logs:/var/log/atalanta
+      - nginx_logs:/var/log/nginx
+      - fluentd_logs:/var/log/fluentd
+    
+    ports:
+      - "${FLUENTD_PORT:-24224}:24224"
+      - "${FLUENTD_PORT:-24224}:24224/udp"
+    
+    networks:
+      - atalanta-network
+    
+    profiles:
+      - "with-logging"
+    
+    labels:
+      - "com.atalanta.service=log-aggregation"
+      - "com.atalanta.environment=production"
+
+# Named volumes for data persistence
+volumes:
+  atalanta_workspace:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${WORKSPACE_PATH:-./data/workspace}
+    labels:
+      - "com.atalanta.volume=workspace"
+      - "com.atalanta.backup=daily"
+  
+  atalanta_logs:
+    driver: local
+    labels:
+      - "com.atalanta.volume=logs"
+      - "com.atalanta.backup=weekly"
+  
+  nginx_logs:
+    driver: local
+    labels:
+      - "com.atalanta.volume=nginx-logs"
+  
+  prometheus_data:
+    driver: local
+    labels:
+      - "com.atalanta.volume=prometheus-data"
+  
+  fluentd_logs:
+    driver: local
+    labels:
+      - "com.atalanta.volume=fluentd-logs"
+
+# Custom network for service communication
+networks:
+  atalanta-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+    labels:
+      - "com.atalanta.network=production"
