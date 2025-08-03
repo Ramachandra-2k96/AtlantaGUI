@@ -4,8 +4,8 @@ import next from 'next';
 import { terminalWebSocketServer } from './src/lib/websocket-server';
 
 const dev = process.env.NODE_ENV !== 'production';
-const hostname = 'localhost';
-const port = parseInt(process.env.PORT || '3002', 10);
+const hostname = process.env.HOSTNAME || 'localhost';
+const port = parseInt(process.env.PORT || '3000', 10);
 
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
@@ -25,25 +25,23 @@ app.prepare().then(() => {
   // Initialize WebSocket server
   terminalWebSocketServer.initialize(server);
 
-  server.listen(port, (err?: Error) => {
-    if (err) throw err;
+  server.listen(port, hostname, () => {
     console.log(`> Ready on http://${hostname}:${port}`);
   });
 
   // Graceful shutdown
-  process.on('SIGTERM', () => {
-    console.log('SIGTERM received, shutting down gracefully');
+  const shutdown = () => {
+    console.log('Shutting down gracefully...');
     terminalWebSocketServer.shutdown();
     server.close(() => {
+      console.log('Server closed');
       process.exit(0);
     });
-  });
+  };
 
-  process.on('SIGINT', () => {
-    console.log('SIGINT received, shutting down gracefully');
-    terminalWebSocketServer.shutdown();
-    server.close(() => {
-      process.exit(0);
-    });
-  });
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
+}).catch((err) => {
+  console.error('Error starting server:', err);
+  process.exit(1);
 });

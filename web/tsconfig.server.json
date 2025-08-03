@@ -1,13 +1,20 @@
 {
-  "extends": "./tsconfig.json",
   "compilerOptions": {
-    "module": "commonjs",
     "target": "ES2020",
-    "noEmit": false,
+    "module": "commonjs",
+    "lib": ["ES2020"],
     "outDir": "./dist",
     "rootDir": "./",
-    "moduleResolution": "node"
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "declaration": false,
+    "sourceMap": false
   },
-  "include": ["server.ts", "src/lib/**/*.ts"],
-  "exclude": ["node_modules", ".next", "src/app/**/*", "src/components/**/*", "src/hooks/**/*", "src/contexts/**/*"]
+  "include": ["server.ts", "src/lib/websocket-server.ts"],
+  "exclude": ["node_modules", ".next", "dist"]
 }
